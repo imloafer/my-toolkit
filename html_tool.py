@@ -205,14 +205,14 @@ def epub_ncx2html(file, classname='html'):
 
 if __name__ == "__main__":
 
-    path = r'D:\test\The Markdown Guide (Matt Cone)\OEBPS\toc.ncx'
+    path = r'D:\下载\周惠楠'
     # p = r' ?\(z-lib\.org\)| ?\(b-ok\.cc\)| ? by it-ebooks| ?- ?libgen\.li| ?\(Z-Library\)'
-    p = r'\.xhtml'
-    repl = '.html'
-    # ht = HtmlTool(path)
-    # ht.rename(p, repl)
+    p = r'周惠楠 _页面_'
+    repl = ''
+    ht = HtmlTool(path)
+    ht.rename(p, repl)
     # ht.srt2vtt()
     # ht.make_list()
 
     # ht.rename_dir(pat)
-    epub_ncx2html(path)
+    # epub_ncx2html(path)
