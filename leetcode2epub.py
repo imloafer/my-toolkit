@@ -2,7 +2,7 @@ from pathlib import Path
 from make_epub import merge2epub
 
 
-def leetcode2epub(cat, source_path, dest_path, dest_name, indent=False):
+def leetcode2epub(cat, source_path, dest_path, dest_name, indent):
 
     def rep(m):
         lng = len(m[2])
@@ -49,9 +49,9 @@ def leetcode2epub(cat, source_path, dest_path, dest_name, indent=False):
                source_path,
                dest_path,
                dest_name,
-               read_replacement_pairs,
-               write_replacement_pairs,
-               options,
+               read_replacement_pairs=read_replacement_pairs,
+               write_replacement_pairs=write_replacement_pairs,
+               options=options,
                indent=indent)
 
 

@@ -1,7 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import pypandoc
-from modifier import IMAGES, Image2SlideReader
+from modifier import Image2SlideReader
+from constants import IMAGES
 
 
 def img2slide(src_path, dest_path, dest_name, revealjs_path='D:/pandoc/reveal.js'):

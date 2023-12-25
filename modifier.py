@@ -5,8 +5,6 @@ from bs4 import BeautifulSoup as Soup
 from pathlib import Path
 import random
 
-IMAGES = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
-
 
 def walk(path):
     for root, dirs, files in os.walk(path):

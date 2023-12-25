@@ -1,13 +1,15 @@
 import pypandoc
 from tempfile import TemporaryDirectory
 from pathlib import Path
-from modifier import walk, Reader, Modifier, TextReader, IMAGES
+from modifier import walk, Reader, Modifier, TextReader
+from constants import IMAGES
 
 
 def merge2epub(cat,
                source_path,
                dest_path,
                dest_name,
+               mod=Modifier,
                read_replacement_pairs=None,
                write_replacement_pairs=None,
                options=None,
@@ -21,7 +23,7 @@ def merge2epub(cat,
             return
     to = 'epub'
     fr = cat.split('.')[-1]
-    modifier = Modifier()
+    modifier = mod()
     reader = Reader()
     dst = Path(dest_path, f'{dest_name}.{to}')
     contents = reader.merge(source_path, cat, read_replacement_pairs)
@@ -85,10 +87,7 @@ if __name__ == '__main__':
     cat = 'README.md'
     source_path = Path(r'D:\software\novel\photo\gallery')
     dest_path = Path(r'D:\test')
-    # photo_path = Path(r'D:\software\novel\photo')
     dest_name = source_path.name
-    # txt2epub(source_path, photo_path, dest_path, dest_name, indent=True)
-    # leetcode2epub(cat, source_path, dest_path, dest_name, indent=False)
 
 
 
