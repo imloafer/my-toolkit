@@ -1,11 +1,16 @@
 import pickle
 from urllib.parse import urlparse, urlunparse
-from bs4 import BeautifulSoup, element
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from bs4 import BeautifulSoup, element
+import urllib3
 import requests
-from requests.packages import urllib3
 from requests.adapters import HTTPAdapter
 from fake_useragent import UserAgent
+
+# suppress waring messages
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class Crawler:
@@ -26,51 +31,54 @@ class Crawler:
 
         # check if the site crawled before, if then start from last url.
         try:
-            with open(self.file_urls, 'rb') as f:
+            with self.file_urls.open('rb') as f:
                 self.urls = pickle.load(f)
         except FileNotFoundError:
             self.urls = {url}
         try:
-            with open(self.file_visited, 'rb') as f:
+            with self.file_visited.open('rb') as f:
                 self.explored = pickle.load(f)
         except FileNotFoundError:
             self.explored = set()
 
-    def crawl(self, container):
-        urllib3.disable_warnings()  # suppress waring messages
+    def crawl(self, containers):
 
         while self.urls:
             url = self.urls.pop()
             if url in self.explored:
                 continue
-            print('url is ', url, 'total is ', len(self.urls), 'finished ', len(self.explored))
-            try:
-                response = self._get(url)
-            except Exception as e:
-                print(url)
-                print(e)
-                # if error, restore unfinished url
-                self._restore(url)
-                break
-            else:
-                if response:
-                    response.encoding = 'utf-8'
-                    # parse page
-                    page = BeautifulSoup(response.text, 'html.parser')
+            with requests.session() as session:
+                self.crawl_one(session, url, containers)
 
-                    # add visited url to explored set and serialize it.
-                    self.explored.add(url)
-                    self._serialize(self.file_visited, self.explored)
+    def crawl_one(self, session, url, containers):
+        print(f'Crawling {url}, total {len(self.urls)}, finished {len(self.explored)}')
+        try:
+            response = self._get(session, url)
+            response.raise_for_status()
+        except KeyboardInterrupt:
+            self._restore_url(url)
+        except Exception as e:
+            print(f'url {url} happens {e}')
+            # if error, restore unfinished url
+            self.urls.add(url)
+        else:
+            if response:
+                response.encoding = 'utf-8'
+                # parse page
+                page = BeautifulSoup(response.text, 'html.parser')
 
-                    # update links in current page
-                    self.update_links(url, page)
+                # add visited url to explored set and serialize it.
+                self.explored.add(url)
+                self.after_work(url, page, containers=containers)
 
-                    # download specified contents
-                    self.download(url, page, containers=container)
+    def after_work(self, url, page, containers):
+        # update links in current page
+        self.update_links(url, page)
 
-    def _get(self, url):
+        # download specified contents
+        self.download(url, page, containers=containers)
 
-        session = requests.Session()
+    def _get(self, session, url):
         session.headers = {'User-Agent': UserAgent().random,
                            "Accept-Encoding": "*",
                            "Connection": "keep-alive"
@@ -81,7 +89,7 @@ class Crawler:
 
     def update_links(self, url, page):
         hostname = urlparse(url).netloc
-        links = page.find_all('a', href=True, id=False)
+        links = page.find_all('a', href=True)
         for link in links:
             href = link['href']
             u = urlparse(href)
@@ -104,9 +112,11 @@ class Crawler:
         with open(path, 'wb') as f:
             pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
-    def _restore(self, url):
+    def _restore_url(self, url):
         self.urls.add(url)
         self.explored.discard(url)
+
+    def store(self):
         self._serialize(self.file_urls, self.urls)
         self._serialize(self.file_visited, self.explored)
 
@@ -129,50 +139,109 @@ class ImageCrawler(Crawler):
 
     def save(self, url, srcs, title, attr_child):
         hostname = urlparse(url).hostname
-        for src in srcs:
-            if isinstance(src, element.Tag):
-                src = src[list(attr_child)[0]]
-            u = urlparse(src)
-            src = self._parse_url(u, hostname)
-            p = Path(self.root, u.netloc, u.path.lstrip('/'))
-            if not Path(p).exists():
-                try:
-                    response = self._get(src)
-                except Exception as e:
-                    print(url)
-                    print(e)
-                    # if error, restore unfinished url
-                    self._restore(url)
-                else:
-                    if response:
-                        p.parent.mkdir(parents=True, exist_ok=True)
-                        with p.open('wb') as f:
-                            f.write(response.content)
-                        print(src, 'finished downloading')
+        with requests.Session() as session:
+            for src in srcs:
+                self._save_one(url, session, src, attr_child, hostname)
+
+    def _save_one(self, url, session, src, attr_child, hostname):
+        if isinstance(src, element.Tag):
+            src = src[list(attr_child)[0]]
+        u = urlparse(src)
+        src = self._parse_url(u, hostname)
+        p = Path(self.root, u.netloc, u.path.lstrip('/'))
+        if not p.exists():
+            try:
+                response = self._get(session, src)
+                response.raise_for_status()
+            except KeyboardInterrupt:
+                self._restore_url(url)
+            except Exception as e:
+                print(f'image {src} happens {e}')
+                # if error, restore unfinished url
+                self._restore_url(url)
+            else:
+                if response:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_bytes(response.content)
+                    print(f'Saved image {src}')
 
 
 class TextCrawler(Crawler):
 
     def save(self, url, paras, title, attrs_child):
         u = urlparse(url)
-        path = Path(self.root, u.netloc, u.path.lstrip('/')).parent
         illegal_characters = r'<>:"/\|?*'
         name = title.text.split('-')[0]
         for ic in illegal_characters:
             name = name.replace(ic, '')
-        out_path = Path(path, name).with_suffix('.txt')
-        if not Path(out_path).exists():
-            path.mkdir(parents=True, exist_ok=True)
-            paras = '\n    '.join(p.text for p in paras)
-            with open(out_path, 'w', encoding='utf-8') as out:
-                out.write(f'# {name}\n\n    ')
-                out.write(paras)
-            print('saved...', url, title.text)
+        p = (Path(self.root, u.netloc, u.path.lstrip('/')).parent / name).with_suffix('.txt')
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            paras = '\n    '.join(para.text for para in paras)
+            paras = f'# {name}\n\n    {paras}'
+            p.write_text(paras, encoding='utf-8')
+            print(f'Saved {name} {url}')
+
+
+class CrawlerMultiThread(Crawler):
+
+    def __init__(self, url, root, max_workers=5, attempt=3, timeout=(3, 5), verify=False):
+        super().__init__(url, root, attempt=attempt, timeout=timeout, verify=verify)
+        self.max_workers = max_workers
+
+    def crawl(self, containers):
+        ttl = len(self.urls)
+        while ttl < self.max_workers + 1:
+            urls = [url for _ in range(ttl)
+                    if (url := self.urls.pop()) not in self.explored]
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                with requests.Session() as session:
+                    futures = [executor.submit(self.crawl_one, session, url, containers) for url in urls]
+            if (ttl := len(self.urls)) == 0:
+                return
+        urls = [url for _ in range(self.max_workers+1)
+                if (url := self.urls.pop()) not in self.explored]
+        while (lng := len(urls)) < self.max_workers and ttl >= (diff := self.max_workers - lng):
+            urls += [url for _ in range(diff)
+                     if (url := self.urls.pop()) not in self.explored]
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            with requests.Session() as session:
+                futures = [executor.submit(self.crawl_one, session, url, containers) for url in urls]
+                while self.urls:
+                    for future in as_completed(futures):
+                        url = self.urls.pop()
+                        f = executor.submit(self.crawl_one, session, url, containers)
+                        futures.remove(future)
+                        futures.append(f)
+
+    def after_work(self, url, page, containers):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            executor.submit(self.update_links, url, page)
+            executor.submit(self.download, url, page, containers=containers)
+
+
+class ImageCrawlerMultiThread(CrawlerMultiThread, ImageCrawler):
+
+    def save(self, url, srcs, title, attr_child):
+        hostname = urlparse(url).hostname
+        with ThreadPoolExecutor() as executor:
+            with requests.Session() as session:
+                for src in srcs:
+                    executor.submit(self._save_one, url, session, src, attr_child, hostname)
+
+
+class TextCrawlerMultiThread(CrawlerMultiThread, TextCrawler):
+
+    pass
+
+
+def main(Krawler, url, root, containers, **kwargs):
+    crawler = Krawler(url, root, **kwargs)
+    try:
+        crawler.crawl(containers)
+    finally:
+        crawler.store()
 
 
 if __name__ == '__main__':
-    root = Path(r'D:\test')
-    url = 'https://pic.ccav.co'
-    containers = [('div', {'class': 'pic-show'}), ('img', {'data-src': True})]
-    crawler = ImageCrawler(url, root, timeout=1000)
-    crawler.crawl(containers)
+    pass
