@@ -1,132 +1,73 @@
-import pickle
-# from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 import asyncio
 from pathlib import Path
 
-from bs4 import BeautifulSoup, element
-import urllib3
-import aiohttp
-# from requests.adapters import HTTPAdapter
+import httpx
 from fake_useragent import UserAgent
+from tenacity import retry, stop_after_attempt
 
-# suppress waring messages
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from crawler import Crawler, ImageCrawler, TextCrawler
 
 
-class Crawler:
+class CrawlerAsync(Crawler):
 
-    def __init__(self, url, root, max_workers=5, attempt=3, timeout=(3, 5), verify=False):
-
-        u = urlparse(url)
-        if u.scheme == '':
-            u = u._replace(scheme='https')
-        url = urlunparse(u)
-        self.root = root
-        self.max_workers = max_workers
-        self.attempt = attempt
-        self.timeout = timeout
-        self.verify = verify
-        self.domain = u.netloc
-        self.file_urls = Path(self.domain).with_suffix('.url.pickle')
-        self.file_visited = Path(self.domain).with_suffix('.visited.pickle')
-
-        # check if the site crawled before, if then start from arbitrary url.
-        try:
-            with self.file_urls.open('rb') as f:
-                self.urls = pickle.load(f)
-        except FileNotFoundError:
-            self.urls = {url}
-        try:
-            with self.file_visited.open('rb') as f:
-                self.explored = pickle.load(f)
-        except FileNotFoundError:
-            self.explored = set()
+    def __init__(self, url, root, max_coco=50, attempt=3, timeout=3, verify=False):
+        super().__init__(url, root, attempt=attempt, timeout=timeout, verify=verify)
+        self.max_coco = max_coco
+        self.transport = httpx.AsyncHTTPTransport(retries=self.attempt)
 
     async def crawl(self, containers):
-        ttl = len(self.urls)
-        while ttl < self.max_workers + 1:
-            urls = [url for _ in range(ttl)
-                    if (url := self.urls.pop()) not in self.explored]
-            async with aiohttp.ClientSession() as session:
-                to_do = [self.crawl_one(session, url, containers) for url in urls]
-            if (ttl := len(self.urls)) == 0:
-                return
-        urls = [url for _ in range(self.max_workers+1)
-                if (url := self.urls.pop()) not in self.explored]
-        while (lng := len(urls)) < self.max_workers and ttl >= (diff := self.max_workers - lng):
-            urls += [url for _ in range(diff)
-                     if (url := self.urls.pop()) not in self.explored]
-        async with aiohttp.ClientSession() as session:
-            to_do = [self.crawl_one(session, url, containers) for url in urls]
-            while self.urls:
-                for coco in asyncio.as_completed(to_do):
-                    url = self.urls.pop()
-                    # to_do.remove(coco)
-                    to_do.append(self.crawl_one(session, url, containers))
+        while self.urls:
+            ttl = len(self.urls)
+            async with httpx.AsyncClient(verify=self.verify, transport=self.transport) as session:
+                if ttl < self.max_coco + 1:
+                    to_do = [self._crawl_one(session, url, containers)
+                             for _ in range(ttl) if (url := self.urls.pop()) not in self.explored]
+                else:
+                    to_do = [self._crawl_one(session, url, containers)
+                             for _ in range(self.max_coco + 1) if (url := self.urls.pop()) not in self.explored]
+                await asyncio.gather(*to_do)
+                # for td in asyncio.as_completed(to_do):
+                #    print(f'{td} is done')
 
-    async def crawl_one(self, session, url, containers):
+    async def _crawl_one(self, session, url, containers):
 
         print(f'Crawling {url}, total {len(self.urls)}, finished {len(self.explored)}')
+        page = await self._get(session, url, url, self._parse_html)
+        if page:
+            await asyncio.gather(self._update_links(url, page),
+                                 self._download(url, page, containers=containers))
+
+    # @retry(stop=stop_after_attempt(3))
+    async def _get(self, session, url, ori_url, f, *args):
+        headers = {'User-Agent': UserAgent().random,
+                   "Accept-Encoding": "*",
+                   "Connection": "keep-alive"
+                   }
         try:
-            response = await self._get(session, url)
+            r = await session.get(url,
+                                  headers=headers,
+                                  timeout=self.timeout,
+                                  follow_redirects=True,)
+            r.raise_for_status()
         except KeyboardInterrupt:
-            self._restore_url(url)
+            self._restore_url(ori_url)
         except Exception as e:
             print(f'url {url} happens {e}')
             # if error, restore unfinished url
-            self.urls.add(url)
+            self.urls.add(ori_url)
         else:
-            # parse page
-            page = await self.parse_html(response)
+            r.encoding = 'utf-8'
+            self.explored.add(ori_url)
+            return await f(r, *args)
 
-            # add visited url to explored set and serialize it.
-            self.explored.add(url)
-            await self.update_links(url, page)
-            await self.download(url, page, containers=containers)
+    async def _parse_html(self, resp):
+        return super()._parse_html(resp)
 
-    async def parse_html(self, response):
-        return await BeautifulSoup(response, 'html.parser')
+    async def _update_links(self, url, page):
+        super()._update_links(url, page)
 
-    async def _get(self, session, url):
-        headers = {'User-Agent': UserAgent().random}
-        response = await session.get(url, headers=headers, raise_for_status=True,
-                                   ssl=self.verify, timeout=self.timeout)
-        return await response.text(encoding='utf-8')
-
-    async def update_links(self, url, page):
-        hostname = urlparse(url).netloc
-        links = page.find_all('a', href=True)
-        for link in links:
-            href = link['href']
-            u = urlparse(href)
-            if u.netloc != '' and u.netloc != hostname:
-                continue
-            href = self._parse_url(u, hostname)
-            if href not in self.explored:
-                self.urls.add(href)
-
-    def _parse_url(self, parsed_url, hostname):
-
-        if parsed_url.scheme == '':
-            parsed_url = parsed_url._replace(scheme='https')
-        if parsed_url.netloc == '':  # convert relative url to absolute url
-            parsed_url = parsed_url._replace(netloc=hostname)
-        return urlunparse(parsed_url)
-
-    def _serialize(self, path, obj):
-        with open(path, 'wb') as f:
-            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
-    def _restore_url(self, url):
-        self.urls.add(url)
-        self.explored.discard(url)
-
-    def store(self):
-        self._serialize(self.file_urls, self.urls)
-        self._serialize(self.file_visited, self.explored)
-
-    async def download(self, url, page, containers):
+    async def _download(self, url, page, containers):
         title = page.find('title')
         parent_tag, attrs = containers[0]
         contents = page.find_all(parent_tag, attrs=attrs)
@@ -137,66 +78,34 @@ class Crawler:
                 if targets:
                     await self.save(url, targets, title, attr_child)
 
-    async def save(self, url, targets, title, attr_child):
+    async def save(self, url, targets, title, attr):
         raise NotImplemented
 
 
-class ImageCrawler(Crawler):
+class ImageCrawlerAsync(CrawlerAsync, ImageCrawler):
 
-    async def _get(self, session, url):
-        headers = {'User-Agent': UserAgent().random}
-        response = await session.get(url, headers=headers, raise_for_status=True,
-                                   ssl=self.verify, timeout=self.timeout)
-        return await response.read()
-
-    async def save(self, url, srcs, title, attr_child):
+    async def save(self, url, srcs, title, attr):
         hostname = urlparse(url).hostname
-        async with aiohttp.Session() as session:
-            to_do = [self._save_one(url, session, src, attr_child, hostname)
+        async with httpx.AsyncClient(verify=self.verify) as session:
+            to_do = [self._save_one(session, url, src, attr, hostname)
                      for src in srcs]
+            await asyncio.gather(*to_do)
 
-    async def _save_one(self, url, session, src, attr_child, hostname):
-        if isinstance(src, element.Tag):
-            src = src[list(attr_child)[0]]
-        u = urlparse(src)
-        src = self._parse_url(u, hostname)
-        p = Path(self.root, u.netloc, u.path.lstrip('/'))
+    async def _save_one(self, session, url, src, attr, hostname):
+        src, p = self._pre_process(src, attr, hostname)
         if not p.exists():
-            try:
-                response = await self._get(session, src)
-            except KeyboardInterrupt:
-                self._restore_url(url)
-            except Exception as e:
-                print(f'image {src} happens {e}')
-                # if error, restore unfinished url
-                self._restore_url(url)
-            else:
-                asyncio.to_thread(self._write,p, response, src)
+            await self._get(session, src, url, self._write, p)
 
-    def _write(self, p, response, src):
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(response)
-        print(f'Saved image {src}')
+    async def _write(self, resp, p):
+        await asyncio.to_thread(super()._write, resp, p)
 
 
-class TextCrawler(Crawler):
+class TextCrawlerAsync(CrawlerAsync, TextCrawler):
 
-    async def save(self, url, paras, title, attrs_child):
-        u = urlparse(url)
-        illegal_characters = r'<>:"/\|?*'
-        name = title.text.split('-')[0]
-        for ic in illegal_characters:
-            name = name.replace(ic, '')
-        p = (Path(self.root, u.netloc, u.path.lstrip('/')).parent/name).with_suffix('.txt')
-        if not p.exists():
-            p.parent.mkdir(parents=True, exist_ok=True)
-            paras = '\n    '.join(para.text for para in paras)
-            paras = f'# {name}\n\n    {paras}'
-            asyncio.to_thread(self._write, p, paras, name, url)
-
-    def _write(self, p, contents, name, url):
-        p.write_text(contents, encoding='utf-8')
-        print(f'Saved {name} {url}')
+    async def save(self, url, paras, title, attr):
+        path, contents, name = self._pre_process(url, paras, title)
+        if contents:
+            await asyncio.to_thread(self._write, path, contents, name, url)
 
 
 def main(Krawler, url, root, containers, **kwargs):
@@ -208,4 +117,7 @@ def main(Krawler, url, root, containers, **kwargs):
 
 
 if __name__ == '__main__':
-    pass
+    root = Path(r'E:\test')
+    url = 'https://www.meitule.net'
+    containers = [('div', {'class': 'content'}), ('img', {'src': True})]
+    main(ImageCrawlerAsync, url, root, containers, max_coco=99, timeout=10)
