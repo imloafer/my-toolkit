@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 import pickle
 
@@ -29,5 +30,41 @@ def main():
     for url in urls:
         crawl_one(url)
 
+
+async def add(a, b):
+    await asyncio.sleep(3)
+    return a + b
+
+
+async def delay(sec):
+    print(f'I am sleeping for {sec} seconds')
+    await asyncio.sleep(sec)
+    print(f'I woke up after {sec} seconds')
+
+
+def long():
+    c = 2
+    for _ in range(100000000):
+        c += 1
+    print(f'c = {c}')
+    return c
+
+
+async def main1():
+    start = time.time()
+    # loop = asyncio.get_running_loop()
+    task2 = asyncio.create_task(asyncio.to_thread(long))
+    # result1 = await asyncio.to_thread(long)
+    task = asyncio.create_task(add(2, 3))
+    task1 = asyncio.create_task(delay(2))
+    result = await task
+    await task1
+    result1 = await task2
+
+    print(f'result is {result}')
+    print(f'long is {result1}')
+    end = time.time()
+    print(end - start)
+
 if __name__ == '__main__':
-    main()
+    asyncio.run(main1())

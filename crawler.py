@@ -29,7 +29,7 @@ class Crawler:
         self.file_urls = Path(self.domain).with_suffix('.url.pickle')
         self.file_visited = Path(self.domain).with_suffix('.visited.pickle')
 
-        # check if the site crawled before, if then start from last url.
+        # check if the site crawled before, if then start from arbitrary url.
         try:
             with self.file_urls.open('rb') as f:
                 self.urls = pickle.load(f)
@@ -79,7 +79,7 @@ class Crawler:
         except KeyboardInterrupt:
             self._restore_url(ori_url)
         except Exception as e:
-            print(f'url {url} happens {e}')
+            print(f'{url} happens {e}')
             # if error, restore unfinished url
             self._restore_url(ori_url)
         else:
@@ -154,7 +154,7 @@ class ImageCrawler(Crawler):
 
     def _write(self, resp, p):
         p.parent.mkdir(parents=True, exist_ok=True)
-        print(f'Writing image {p}')
+        print(f'Writing image to {p}')
         p.write_bytes(resp.content)
 
 
@@ -162,9 +162,9 @@ class TextCrawler(Crawler):
 
     def save(self, url, paras, title, attr):
 
-        path, contents, name = self._pre_process(url, paras, title)
+        path, contents = self._pre_process(url, paras, title)
         if contents:
-            self._write(path, contents, name, url)
+            self._write(path, contents)
 
     def _pre_process(self, url, contents, title):
         u = urlparse(url)
@@ -177,11 +177,11 @@ class TextCrawler(Crawler):
             p.parent.mkdir(parents=True, exist_ok=True)
             contents = '\n    '.join(para.text for para in contents)
             contents = f'# {name}\n\n    {contents}'
-            return p, contents, name
+            return p, contents
 
-    def _write(self, path, contents, name, url):
+    def _write(self, path, contents):
+        print(f'Saving {path.stem} to {path}')
         path.write_text(contents, encoding='utf-8')
-        print(f'Saved {name} {url}')
 
 
 class CrawlerMultiThread(Crawler):
@@ -195,14 +195,12 @@ class CrawlerMultiThread(Crawler):
             ttl = len(self.urls)
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 with requests.session() as session:
-                    if ttl < self.max_workers + 1:
-                        futures = [executor.submit(self._crawl_one, session, url, containers)
-                                   for _ in range(ttl)
-                                   if (url := self.urls.pop()) not in self.explored]
+                    if ttl < self.max_workers:
+                        futures = [executor.submit(self._crawl_one, session, self.urls.pop(), containers)
+                                   for _ in range(ttl)]
                     else:
-                        futures = [executor.submit(self._crawl_one, session, url, containers)
-                                   for _ in range(self.max_workers + 1)
-                                   if (url := self.urls.pop()) not in self.explored]
+                        futures = [executor.submit(self._crawl_one, session, self.urls.pop(), containers)
+                                   for _ in range(self.max_workers)]
                         while self.urls:
                             for future in as_completed(futures):
                                 url = self.urls.pop()
@@ -211,7 +209,7 @@ class CrawlerMultiThread(Crawler):
                                 futures.append(f)
 
     def _distill(self, url, page, containers):
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor() as executor:
             executor.submit(self._update_links, url, page)
             executor.submit(self._download, url, page, containers=containers)
 
@@ -222,8 +220,7 @@ class ImageCrawlerMultiThread(CrawlerMultiThread, ImageCrawler):
         hostname = urlparse(url).hostname
         with ThreadPoolExecutor() as executor:
             with requests.session() as session:
-                for src in srcs:
-                    executor.submit(self._save_one, session, url, src, attr, hostname)
+                [executor.submit(self._save_one, session, url, src, attr, hostname) for src in srcs]
 
 
 class TextCrawlerMultiThread(CrawlerMultiThread, TextCrawler):

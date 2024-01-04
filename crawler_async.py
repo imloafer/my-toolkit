@@ -1,12 +1,11 @@
 from urllib.parse import urlparse
 import asyncio
-from pathlib import Path
 
 import httpx
 from fake_useragent import UserAgent
 from tenacity import retry, stop_after_attempt
 
-from crawler import Crawler, ImageCrawler, TextCrawler
+from crawler import Crawler, ImageCrawler, TextCrawler, TextCrawlerMultiThread
 
 
 class CrawlerAsync(Crawler):
@@ -27,8 +26,6 @@ class CrawlerAsync(Crawler):
                     to_do = [self._crawl_one(session, url, containers)
                              for _ in range(self.max_coco + 1) if (url := self.urls.pop()) not in self.explored]
                 await asyncio.gather(*to_do)
-                # for td in asyncio.as_completed(to_do):
-                #    print(f'{td} is done')
 
     async def _crawl_one(self, session, url, containers):
 
@@ -53,16 +50,15 @@ class CrawlerAsync(Crawler):
         except KeyboardInterrupt:
             self._restore_url(ori_url)
         except Exception as e:
-            print(f'url {url} happens {e}')
+            print(f'{url} happens {e}')
             # if error, restore unfinished url
             self.urls.add(ori_url)
         else:
             r.encoding = 'utf-8'
             self.explored.add(ori_url)
-            return await f(r, *args)
-
-    async def _parse_html(self, resp):
-        return super()._parse_html(resp)
+            loop = asyncio.get_running_loop()
+            result = loop.run_in_executor(None, f, r, *args)
+            return await result
 
     async def _update_links(self, url, page):
         super()._update_links(url, page)
@@ -96,19 +92,16 @@ class ImageCrawlerAsync(CrawlerAsync, ImageCrawler):
         if not p.exists():
             await self._get(session, src, url, self._write, p)
 
-    async def _write(self, resp, p):
-        await asyncio.to_thread(super()._write, resp, p)
-
 
 class TextCrawlerAsync(CrawlerAsync, TextCrawler):
 
     async def save(self, url, paras, title, attr):
-        path, contents, name = self._pre_process(url, paras, title)
+        path, contents = self._pre_process(url, paras, title)
         if contents:
-            await asyncio.to_thread(self._write, path, contents, name, url)
+            await asyncio.to_thread(self._write, path, contents)
 
 
-def main(Krawler, url, root, containers, **kwargs):
+def main_async(Krawler, url, root, containers, **kwargs):
     crawler = Krawler(url, root, **kwargs)
     try:
         asyncio.run(crawler.crawl(containers))
@@ -117,7 +110,4 @@ def main(Krawler, url, root, containers, **kwargs):
 
 
 if __name__ == '__main__':
-    root = Path(r'E:\test')
-    url = 'https://www.meitule.net'
-    containers = [('div', {'class': 'content'}), ('img', {'src': True})]
-    main(ImageCrawlerAsync, url, root, containers, max_coco=99, timeout=10)
+    pass
