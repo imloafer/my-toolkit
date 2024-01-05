@@ -23,12 +23,13 @@ def crawl_one(url):
 
 
 def main():
-    # with open('pic.ccav.url.pickle', 'rb') as f:
-    #     urls = pickle.load(f)
+    with open('pic.ccav.visited.pickle', 'rb') as f:
+        urls = pickle.load(f)
 
-    urls = ['https://pic.ccav.co/album/100879.html', 'https://cdn.ccav.co/pic/album/202401/809185/29156216.webp'] #list(urls)[:5]
-    for url in urls:
-        crawl_one(url)
+    url = 'https://pic.ccav.co/album/7364.html'
+    print(f'{url} in urls ? {url in urls} ')
+
+
 
 
 async def add(a, b):
@@ -67,4 +68,4 @@ async def main1():
     print(end - start)
 
 if __name__ == '__main__':
-    asyncio.run(main1())
+    main()

@@ -19,13 +19,17 @@ class CrawlerAsync(Crawler):
         while self.urls:
             ttl = len(self.urls)
             async with httpx.AsyncClient(verify=self.verify, transport=self.transport) as session:
-                if ttl < self.max_coco + 1:
-                    to_do = [self._crawl_one(session, url, containers)
-                             for _ in range(ttl) if (url := self.urls.pop()) not in self.explored]
+                if ttl < self.max_coco:
+                    to_do = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                             for _ in range(ttl)]
                 else:
-                    to_do = [self._crawl_one(session, url, containers)
-                             for _ in range(self.max_coco + 1) if (url := self.urls.pop()) not in self.explored]
-                await asyncio.gather(*to_do)
+                    to_do = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                             for _ in range(self.max_coco)]
+                while to_do and self.urls:
+                    done, to_do = await asyncio.wait(to_do, return_when=asyncio.FIRST_COMPLETED)
+                    for _ in done:
+                        task = asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                        to_do.add(task)
 
     async def _crawl_one(self, session, url, containers):
 
@@ -35,7 +39,7 @@ class CrawlerAsync(Crawler):
             await asyncio.gather(self._update_links(url, page),
                                  self._download(url, page, containers=containers))
 
-    # @retry(stop=stop_after_attempt(3))
+    @retry(stop=stop_after_attempt(3))
     async def _get(self, session, url, ori_url, f, *args):
         headers = {'User-Agent': UserAgent().random,
                    "Accept-Encoding": "*",
