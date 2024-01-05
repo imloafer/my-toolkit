@@ -5,7 +5,7 @@ import httpx
 from fake_useragent import UserAgent
 from tenacity import retry, stop_after_attempt
 
-from crawler import Crawler, ImageCrawler, TextCrawler, TextCrawlerMultiThread
+from crawler import Crawler, ImageCrawler, TextCrawler
 
 
 class CrawlerAsync(Crawler):
@@ -37,7 +37,7 @@ class CrawlerAsync(Crawler):
         page = await self._get(session, url, url, self._parse_html)
         if page:
             await asyncio.gather(self._update_links(url, page),
-                                 self._download(url, page, containers=containers))
+                                 self._post_process(url, page, containers=containers))
 
     @retry(stop=stop_after_attempt(3))
     async def _get(self, session, url, ori_url, f, *args):
@@ -67,7 +67,7 @@ class CrawlerAsync(Crawler):
     async def _update_links(self, url, page):
         super()._update_links(url, page)
 
-    async def _download(self, url, page, containers):
+    async def _post_process(self, url, page, containers):
         title = page.find('title')
         parent_tag, attrs = containers[0]
         contents = page.find_all(parent_tag, attrs=attrs)
@@ -92,7 +92,7 @@ class ImageCrawlerAsync(CrawlerAsync, ImageCrawler):
             await asyncio.gather(*to_do)
 
     async def _save_one(self, session, url, src, attr, hostname):
-        src, p = self._pre_process(src, attr, hostname)
+        src, p = self._pre_prepare(src, attr, hostname)
         if not p.exists():
             await self._get(session, src, url, self._write, p)
 
@@ -100,7 +100,7 @@ class ImageCrawlerAsync(CrawlerAsync, ImageCrawler):
 class TextCrawlerAsync(CrawlerAsync, TextCrawler):
 
     async def save(self, url, paras, title, attr):
-        path, contents = self._pre_process(url, paras, title)
+        path, contents = self._pre_prepare(url, paras, title)
         if contents:
             await asyncio.to_thread(self._write, path, contents)
 

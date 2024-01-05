@@ -64,7 +64,7 @@ class Crawler:
         self._update_links(url, page)
 
         # download specified contents
-        self._download(url, page, containers=containers)
+        self._post_process(url, page, containers=containers)
 
     def _get(self, session, url, ori_url, f, *args):
         session.headers = {'User-Agent': UserAgent().random,
@@ -116,7 +116,7 @@ class Crawler:
             pickle.dump(self.urls, f_urls, pickle.HIGHEST_PROTOCOL)
             pickle.dump(self.explored, f_visited, pickle.HIGHEST_PROTOCOL)
 
-    def _download(self, url, page, containers):
+    def _post_process(self, url, page, containers):
         title = page.find('title')
         parent_tag, attrs = containers[0]
         contents = page.find_all(parent_tag, attrs=attrs)
@@ -140,11 +140,11 @@ class ImageCrawler(Crawler):
                 self._save_one(session, url, src, attr, hostname)
 
     def _save_one(self, session, url, src, attr, hostname):
-        src, p = self._pre_process(src, attr, hostname)
+        src, p = self._pre_prepare(src, attr, hostname)
         if not p.exists():
             self._get(session, src, url, self._write, p)
 
-    def _pre_process(self, src, attr, hostname):
+    def _pre_prepare(self, src, attr, hostname):
         if isinstance(src, element.Tag):
             src = src[list(attr)[0]]
         u = urlparse(src)
@@ -162,11 +162,11 @@ class TextCrawler(Crawler):
 
     def save(self, url, paras, title, attr):
 
-        path, contents = self._pre_process(url, paras, title)
+        path, contents = self._pre_prepare(url, paras, title)
         if contents:
             self._write(path, contents)
 
-    def _pre_process(self, url, contents, title):
+    def _pre_prepare(self, url, contents, title):
         u = urlparse(url)
         illegal_characters = r'<>:"/\|?*'
         name = title.text.split('-')[0]
@@ -211,7 +211,7 @@ class CrawlerMultiThread(Crawler):
     def _distill(self, url, page, containers):
         with ThreadPoolExecutor() as executor:
             executor.submit(self._update_links, url, page)
-            executor.submit(self._download, url, page, containers=containers)
+            executor.submit(self._post_process, url, page, containers=containers)
 
 
 class ImageCrawlerMultiThread(CrawlerMultiThread, ImageCrawler):
