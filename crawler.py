@@ -15,12 +15,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class Crawler:
 
-    def __init__(self, url, root, attempt=3, timeout=(3, 5), verify=False):
+    def __init__(self, url, root, attempt=3, timeout=5, verify=False):
 
         u = urlparse(url)
         if u.scheme == '':
             u = u._replace(scheme='https')
-        url = urlunparse(u)
+        url = u.geturl()
         self.root = root
         self.attempt = attempt
         self.timeout = timeout
@@ -52,6 +52,7 @@ class Crawler:
 
     def _crawl_one(self, session, url, containers):
         print(f'Crawling {url}, total {len(self.urls)}, finished {len(self.explored)}')
+        self.explored.add(url)
         page = self._get(session, url, url, self._parse_html)
         if page:
             self._distill(url, page, containers=containers)
@@ -84,7 +85,6 @@ class Crawler:
             self._restore_url(ori_url)
         else:
             r.encoding = 'utf-8'
-            self.explored.add(url)
             return f(r, *args)
 
     def _update_links(self, url, page):
@@ -93,19 +93,19 @@ class Crawler:
         for link in links:
             href = link['href']
             u = urlparse(href)
-            if u.netloc != '' and u.netloc != hostname:
+            if u.netloc != '' and u.netloc != hostname or u.scheme == 'javascript':
                 continue
             href = self._parse_url(u, hostname)
             if href not in self.explored:
                 self.urls.add(href)
 
     def _parse_url(self, parsed_url, hostname):
-
         if parsed_url.scheme == '':
             parsed_url = parsed_url._replace(scheme='https')
         if parsed_url.netloc == '':  # convert relative url to absolute url
             parsed_url = parsed_url._replace(netloc=hostname)
-        return urlunparse(parsed_url)
+        parsed_url = parsed_url._replace(params='', query='', fragment='')
+        return parsed_url.geturl()  # urlunparse(parsed_url)
 
     def _restore_url(self, url):
         self.urls.add(url)

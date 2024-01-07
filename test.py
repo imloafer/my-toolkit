@@ -23,13 +23,11 @@ def crawl_one(url):
 
 
 def main():
-    with open('pic.ccav.visited.pickle', 'rb') as f:
+    with open('blog.xbookcn.url.pickle', 'rb') as f:
         urls = pickle.load(f)
 
-    url = 'https://pic.ccav.co/album/7364.html'
-    print(f'{url} in urls ? {url in urls} ')
-
-
+    for url in urls:
+        print(url)
 
 
 async def add(a, b):
@@ -54,16 +52,18 @@ def long():
 async def main1():
     start = time.time()
     # loop = asyncio.get_running_loop()
-    task2 = asyncio.create_task(asyncio.to_thread(long))
+    # task2 = asyncio.to_thread(long)
     # result1 = await asyncio.to_thread(long)
-    task = asyncio.create_task(add(2, 3))
-    task1 = asyncio.create_task(delay(2))
-    result = await task
-    await task1
-    result1 = await task2
-
-    print(f'result is {result}')
-    print(f'long is {result1}')
+    # task = asyncio.create_task(add(2, 3))
+    # task1 = asyncio.create_task(delay(2))
+    # result = await task
+    # await task1
+    # result1 = await task2
+    await asyncio.gather(asyncio.to_thread(long),
+                   add(2, 3),
+                   delay(2))
+    # print(f'result is {result}')
+    # print(f'long is {result1}')
     end = time.time()
     print(end - start)
 

@@ -10,7 +10,7 @@ from crawler import Crawler, ImageCrawler, TextCrawler
 
 class CrawlerAsync(Crawler):
 
-    def __init__(self, url, root, max_coco=50, attempt=3, timeout=3, verify=False):
+    def __init__(self, url, root, max_coco=50, attempt=3, timeout=5, verify=False):
         super().__init__(url, root, attempt=attempt, timeout=timeout, verify=verify)
         self.max_coco = max_coco
         self.transport = httpx.AsyncHTTPTransport(retries=self.attempt)
@@ -20,26 +20,32 @@ class CrawlerAsync(Crawler):
             ttl = len(self.urls)
             async with httpx.AsyncClient(verify=self.verify, transport=self.transport) as session:
                 if ttl < self.max_coco:
-                    to_do = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
-                             for _ in range(ttl)]
+                    pending = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                               for _ in range(ttl)]
                 else:
-                    to_do = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
-                             for _ in range(self.max_coco)]
-                while to_do and self.urls:
-                    done, to_do = await asyncio.wait(to_do, return_when=asyncio.FIRST_COMPLETED)
-                    for _ in done:
-                        task = asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
-                        to_do.add(task)
+                    pending = [asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                               for _ in range(self.max_coco)]
+                try:
+                    while pending and self.urls:
+                        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                        while done and self.urls:
+                            task = asyncio.create_task(self._crawl_one(session, self.urls.pop(), containers))
+                            pending.add(task)
+                            done.pop()
+                except asyncio.CancelledError:
+                    await self.close()
+                    break
 
     async def _crawl_one(self, session, url, containers):
 
         print(f'Crawling {url}, total {len(self.urls)}, finished {len(self.explored)}')
+        self.explored.add(url)
         page = await self._get(session, url, url, self._parse_html)
         if page:
-            await asyncio.gather(self._update_links(url, page),
+            await asyncio.gather(asyncio.to_thread(self._update_links, url, page),
                                  self._post_process(url, page, containers=containers))
 
-    @retry(stop=stop_after_attempt(3))
+    @retry(stop=stop_after_attempt(5))
     async def _get(self, session, url, ori_url, f, *args):
         headers = {'User-Agent': UserAgent().random,
                    "Accept-Encoding": "*",
@@ -49,23 +55,16 @@ class CrawlerAsync(Crawler):
             r = await session.get(url,
                                   headers=headers,
                                   timeout=self.timeout,
-                                  follow_redirects=True,)
+                                  follow_redirects=True)
             r.raise_for_status()
-        except KeyboardInterrupt:
-            self._restore_url(ori_url)
         except Exception as e:
             print(f'{url} happens {e}')
             # if error, restore unfinished url
-            self.urls.add(ori_url)
+            self._restore_url(ori_url)
         else:
             r.encoding = 'utf-8'
-            self.explored.add(ori_url)
-            loop = asyncio.get_running_loop()
-            result = loop.run_in_executor(None, f, r, *args)
+            result = asyncio.create_task(asyncio.to_thread(f, r, *args))
             return await result
-
-    async def _update_links(self, url, page):
-        super()._update_links(url, page)
 
     async def _post_process(self, url, page, containers):
         title = page.find('title')
@@ -80,6 +79,14 @@ class CrawlerAsync(Crawler):
 
     async def save(self, url, targets, title, attr):
         raise NotImplemented
+
+    async def close(self):
+        print(f'Hold on, app is finishing remaining tasks...')
+        loop = asyncio.get_running_loop()
+        tasks = asyncio.all_tasks(loop) - {asyncio.current_task()}
+        ttl = len(tasks)
+        await asyncio.gather(*tasks)
+        print(f'Done closing, {ttl} remaining tasks finished')
 
 
 class ImageCrawlerAsync(CrawlerAsync, ImageCrawler):
@@ -102,7 +109,8 @@ class TextCrawlerAsync(CrawlerAsync, TextCrawler):
     async def save(self, url, paras, title, attr):
         path, contents = self._pre_prepare(url, paras, title)
         if contents:
-            await asyncio.to_thread(self._write, path, contents)
+            task = asyncio.create_task(asyncio.to_thread(self._write, path, contents))
+            await task
 
 
 def main_async(Krawler, url, root, containers, **kwargs):
