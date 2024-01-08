@@ -2,6 +2,7 @@ import asyncio
 import time
 from pathlib import Path
 import pickle
+import copy
 
 from bs4 import BeautifulSoup, element
 import urllib3
@@ -23,11 +24,9 @@ def crawl_one(url):
 
 
 def main():
-    with open('blog.xbookcn.url.pickle', 'rb') as f:
+    with open('pic.ccav.url.pickle', 'rb') as f:
         urls = pickle.load(f)
 
-    for url in urls:
-        print(url)
 
 
 async def add(a, b):
