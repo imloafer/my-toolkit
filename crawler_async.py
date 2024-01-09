@@ -1,5 +1,6 @@
 from urllib.parse import urlparse
 import asyncio
+import time
 
 import httpx
 from fake_useragent import UserAgent
@@ -10,31 +11,42 @@ from coloredlogger import coloredlogger
 
 logger = coloredlogger(__name__)
 
-# logging.getLogger('httpx').disabled = True
-
 
 class CrawlerAsync(Crawler):
 
     attempt = 3
 
-    def __init__(self, url, root, timeout=5, max_coco=100, **kwargs):
-        super().__init__(url, root, limits=max_coco, timeout=timeout, **kwargs)
+    def __init__(self, url, root, *, limits=100, timeout=5, timer=(60, 10), max_coco=100, **kwargs):
+        super().__init__(url, root, limits=limits, timeout=timeout, **kwargs)
+        self.timer = timer
+        if max_coco > limits:
+            self.limits = httpx.Limits(max_connections=max_coco,
+                                       max_keepalive_connections=max_coco // 5,
+                                       keepalive_expiry=5.0)
         self.max_coco = max_coco
         self.session = httpx.AsyncClient(limits=self.limits,
                                          timeout=httpx.Timeout(timeout=timeout),
                                          **kwargs)
 
     async def crawl(self, containers):
+        start = time.time()
+        cycle_time, pause_time = self.timer
         while self.urls:
             ttl = len(self.urls)
             if ttl < self.max_coco:
-                pending = [asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
-                           for _ in range(ttl)]
+                pending = {asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
+                           for _ in range(ttl)}
             else:
-                pending = [asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
-                           for _ in range(self.max_coco)]
+                pending = {asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
+                           for _ in range(self.max_coco)}
             try:
-                while pending and self.urls:
+                while pending:
+                    end = time.time()
+                    if cycle_time <= end - start:
+                        logger.warning('Taking a %d seconds break', pause_time)
+                        time.sleep(pause_time)
+                        start = time.time()
+                        logger.warning('Continue...')
                     done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
                     while done and self.urls:
                         task = asyncio.create_task(self._crawl_one(self.urls.pop(), containers))

@@ -18,7 +18,7 @@ class Crawler:
 
     attempt = 3
 
-    def __init__(self, url, root, limits=100, timeout=5, **kwargs):
+    def __init__(self, url, root, *, limits=100, timeout=5, **kwargs):
 
         u = urlparse(url)
         if u.scheme == '':
@@ -243,10 +243,4 @@ def main(Krawler, url, root, containers, **kwargs):
 
 
 if __name__ == '__main__':
-    ROOT = Path(r'E:\test')
-    MAX_WORKERS = 5
-    url = 'https://pic.ccav.co'
-    containers = [('div', {'class': 'pic-show'}), ('img', {'data-src': True})]
-    main(ImageCrawlerMultiThread, url, ROOT, containers,
-         max_workers=MAX_WORKERS,
-         timeout=100)
+    pass
