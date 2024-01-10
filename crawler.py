@@ -58,7 +58,8 @@ class Crawler:
 
     def _crawl_one(self, url, containers):
 
-        logger.info('Crawling %s, remain %d, finished %d', url, len(self.urls), len(self.explored))
+        self._log(url)
+        # logger.info('Crawling %s, remain %d, finished %d', url, len(self.urls), len(self.explored))
         self.explored.add(url)
         page = self._get(url, url, self._parse_html)
         if page:
@@ -130,6 +131,9 @@ class Crawler:
                 targets = content.find_all(child_tag, attrs=attr_child)
                 if targets:
                     self.save(url, targets, title, attr_child)
+
+    def _log(self, url):
+        logger.info('Crawling %s, remaining %d, finished %d', url, len(self.urls), len(self.explored))
 
     def save(self, url, targets, title, attr):
         raise NotImplemented
@@ -281,7 +285,8 @@ class CrawlerAsync(Crawler):
 
     async def _crawl_one(self, url, containers):
 
-        logger.info('Crawling %s, remain %d, finished %d', url, len(self.urls), len(self.explored))
+        self._log(url)
+        # logger.info('Crawling %s, remain %d, finished %d', url, len(self.urls), len(self.explored))
         self.explored.add(url)
         page = await self._get(url, url, self._parse_html)
         if page:
