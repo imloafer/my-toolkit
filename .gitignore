@@ -13,8 +13,8 @@
 *_LOCAL_*.txt
 *_REMOTE_*.txt
 *.pickle
-delete_dup.py
-sort_li.py
+bak/
+exercise/
 crawler_text.py
 app.py
 

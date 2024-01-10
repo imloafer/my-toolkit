@@ -1,7 +1,5 @@
 import os
 import re
-import shutil
-import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup as BS
 
 
@@ -34,20 +32,6 @@ class HtmlTool:
                 new_dir = re.sub(pattern, repl, _dir)
                 os.rename(_dir, new_dir)
 
-    def rename(self, pattern, repl=''):
-        """
-        clear unwanted characters in a filename
-        :param pattern: regular expressions or normal string.
-        :param repl: string will be replaced to, default is ''.
-        :return: None
-        """
-
-        for root, file, suffix in self.__get_files():
-            file_path = os.path.join(root, file)
-            file = re.sub(pattern, repl, file)
-            new_file_path = os.path.join(root, file)
-            os.rename(file_path, new_file_path)
-
     def make_list(self):
         """scan a fold
             1, output .mp3 and mp4 files' name to a html list template:
@@ -77,27 +61,6 @@ class HtmlTool:
                     elif suffix == ".html" or suffix == ".xhtml":
                         li += f"<li class=\"playlist html\" id=\"{id_path!s}{suffix!s}\">{' '.join(filename.split('_'))!s}</li>\n"
                     f.write(li)
-
-    def srt2vtt(self):
-        """convert srt subtitle to vtt subtitle"""
-
-        for root, file, suffix in self.__get_files():
-            if suffix == ".srt":
-                name = os.path.splitext(file)[0]
-                vtt_file = name + ".vtt"
-                srt_path = os.path.join(root, file)
-                vtt_path = os.path.join(root, vtt_file)
-                shutil.copy(srt_path, vtt_path)
-
-                with open(vtt_path, 'r', encoding="UTF-8") as f:
-                    a = f.read()
-
-                a = re.sub(r'(\d)(,)(\d)', lambda m: m[1]+'.'+m[3], a)
-
-                with open(vtt_path, "w+", encoding='utf-8') as f:
-                    f.seek(0)
-                    f.write("WEBVTT\n\n")
-                    f.write(a)
 
     def merge_two_web_pages(self, page_file1, page_file2):
 
@@ -155,63 +118,11 @@ class HtmlTool:
                         f.write(temp)
 
 
-def epub_ncx2html(file, classname='html'):
-    """
-    to convert epub toc file to a html tag file in text format.
-    :param file: epub toc file with suffix .ncx, such as A.ncx
-    :param classname: tag class name which want to add to ul tag
-    :return: None.
-    converted text and output a text file in the same path as original .ncx file.
-    """
-    ns = {"ncx": "http://www.daisy.org/z3986/2005/ncx/"}
-    tree = ET.parse(file)
-    root = tree.getroot()
-    nav_map = root.find('./ncx:navMap', ns)
-    file_name = root.find('./ncx:docTitle//ncx:text', ns).text
-    if ":" in file_name:
-        file_name = file_name.split(':')[0]
-    output = os.path.join(os.path.split(file)[0], file_name + ".txt")
-
-    details = ET.Element("details", attrib={'class': "tier1"})
-    ET.SubElement(details, "summary").text = file_name
-    ul = ET.SubElement(details, "ul", attrib={'class': classname})
-
-    def traverse(origin_root, new_root, new_element):
-        children = origin_root.findall('./ncx:navPoint', ns)
-        for i in range(len(children)):
-            if children[i].find('./ncx:navPoint', ns):
-                _new_root = ET.SubElement(new_root, "details")
-                ET.SubElement(_new_root, "summary",
-                              attrib={'id': children[i].find('./ncx:content', ns).attrib['src']}).text \
-                    = children[i].find('.//ncx:text', ns).text
-                if i == 0:
-                    new_root.remove(new_element)
-                _new_element = ET.SubElement(_new_root, "ul", attrib={'class': classname})
-                traverse(children[i], _new_root, _new_element)
-            else:
-                if i > 0 and children[i - 1].find('./ncx:navPoint', ns):
-                    new_element = ET.SubElement(new_root, 'ul', attrib={'class': classname})
-
-                new_sub_element = ET.SubElement(new_element, "li", attrib={'class': 'playlist ' + classname,
-                                    'id': children[i].find('./ncx:content', ns).attrib['src']})
-                new_sub_element.text = children[i].find('.//ncx:text', ns).text
-        return
-
-    traverse(nav_map, details, ul)
-    tree = ET.ElementTree(details)
-    ET.indent(details, space='    ', level=0)
-    tree.write(output, encoding='utf-8')
-
-
 if __name__ == "__main__":
 
-    path = r'D:\下载\周惠楠'
+    path = r'D:\下载'
     # p = r' ?\(z-lib\.org\)| ?\(b-ok\.cc\)| ? by it-ebooks| ?- ?libgen\.li| ?\(Z-Library\)'
-    p = r'周惠楠 _页面_'
-    repl = ''
-    ht = HtmlTool(path)
-    ht.rename(p, repl)
-    # ht.srt2vtt()
+    # ht = HtmlTool(path)
     # ht.make_list()
 
     # ht.rename_dir(pat)
