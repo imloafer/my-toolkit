@@ -17,4 +17,5 @@ bak/
 exercise/
 crawler_text.py
 app.py
+*.dat
 

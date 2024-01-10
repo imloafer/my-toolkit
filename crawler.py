@@ -27,8 +27,7 @@ class Crawler:
         url = u.geturl()
         self.root = root
         self.domain = u.netloc
-        self.file_urls = Path(self.domain).with_suffix('.url.pickle')
-        self.file_visited = Path(self.domain).with_suffix('.visited.pickle')
+        self.data = Path(self.domain).with_suffix('.dat')
         self.limits = httpx.Limits(max_connections=limits,
                                    max_keepalive_connections=limits // 5,
                                    keepalive_expiry=5.0)
@@ -38,14 +37,12 @@ class Crawler:
 
         # check if the site crawled before, if then start from arbitrary url.
         try:
-            with self.file_urls.open('rb') as f:
-                self.urls = pickle.load(f)
+            with self.data.open('rb') as f:
+                d = pickle.load(f)
+                self.urls = d['urls']
+                self.explored = d['explored']
         except FileNotFoundError:
             self.urls = {url}
-        try:
-            with self.file_visited.open('rb') as f:
-                self.explored = pickle.load(f)
-        except FileNotFoundError:
             self.explored = set()
 
     def crawl(self, containers):
@@ -117,9 +114,9 @@ class Crawler:
         self.explored.discard(url)
 
     def store(self):
-        with self.file_urls.open('wb') as f_urls, self.file_visited.open('wb') as f_visited:
-            pickle.dump(self.urls, f_urls, pickle.HIGHEST_PROTOCOL)
-            pickle.dump(self.explored, f_visited, pickle.HIGHEST_PROTOCOL)
+        d = {'urls': self.urls, 'explored': self.explored}
+        with self.data.open('wb') as f:
+            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
 
     def _post_process(self, url, page, containers):
         title = page.find('title')
