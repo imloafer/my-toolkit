@@ -132,7 +132,7 @@ class Crawler:
     def _log(self, url):
         logger.info('Crawling %s, remaining %d, finished %d', url, len(self.urls), len(self.explored))
 
-    def save(self, url, targets, title, attr):
+    def save(self, *args):
         raise NotImplemented
 
 
@@ -239,14 +239,14 @@ class CrawlerAsync(Crawler):
 
     attempt = 3
 
-    def __init__(self, url, root, *, limits=100, timeout=5, timer=(60, 10), max_coco=100, **kwargs):
+    def __init__(self, url, root, *, limits=100, timeout=5, timer=(60, 10), max_workers=100, **kwargs):
         super().__init__(url, root, limits=limits, timeout=timeout, **kwargs)
         self.timer = timer
-        if max_coco > limits:
-            self.limits = httpx.Limits(max_connections=max_coco,
-                                       max_keepalive_connections=max_coco // 5,
+        if max_workers > limits:
+            self.limits = httpx.Limits(max_connections=max_workers,
+                                       max_keepalive_connections=max_workers // 5,
                                        keepalive_expiry=5.0)
-        self.max_coco = max_coco
+        self.max_workers = max_workers
         self.session = httpx.AsyncClient(limits=self.limits,
                                          timeout=httpx.Timeout(timeout=timeout),
                                          **kwargs)
@@ -256,12 +256,12 @@ class CrawlerAsync(Crawler):
         cycle_time, pause_time = self.timer
         while self.urls:
             ttl = len(self.urls)
-            if ttl < self.max_coco:
+            if ttl < self.max_workers:
                 pending = {asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
                            for _ in range(ttl)}
             else:
                 pending = {asyncio.create_task(self._crawl_one(self.urls.pop(), containers))
-                           for _ in range(self.max_coco)}
+                           for _ in range(self.max_workers)}
             try:
                 while pending:
                     end = time.time()
@@ -319,7 +319,7 @@ class CrawlerAsync(Crawler):
                 if targets:
                     await self.save(url, targets, title, attr_child)
 
-    async def save(self, url, targets, title, attr):
+    async def save(self, *args):
         raise NotImplemented
 
     async def aclose(self):

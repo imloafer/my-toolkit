@@ -48,13 +48,12 @@ it includes:
 
 - *root:* the root directory which your pictures or text files will be stored.
 - *url:* the url that you want to crawl, if this url crawled before, will restore from saved data and start from arbitary url in database.
-- *containers:* to locate the content which you want to crawl. default it is a list with **2** groups of tuple. such as: `containers = [('div', {'id': 'picg'}), ('img', {'src': True})]`
-- *max_workers:* (for multithread only), pass max threading, default is **5**.
-- *max_coco:* (for async only), pass max corotine. meanwhile if max_coco is larger than limits, limits will use max_coco. default is **100**.
-- *timer:* (for async only), a tuple, for example (120, 10) means run 120 seconds and then pause 10 seconds, because async is really fast, to reduce sever's load, it is better to pause a while. default is **(60, 10)**.
-- *limits:* parameter pass to httpx, means max connections in a connection pool, default is **100**.
-- *timeout:* parameter pass to httpx, default is **5** seconds.
-- **kwargs:* other parameters pass to httpx.
+- *containers:* to locate the content which you want to crawl. default it is a list with **2** groups of tuple. such as: `containers = [('div', {'id': 'picg'}), ('img', {'src': True})]`, first one should be the next one's ancestor. if only one group or two more groups, should subclass relevant class and override _post_process method.
+- *max_workers:* for multithread, pass max threading, default is **5**. for async, pass max coroutine, if max_workers is larger than limits, limits will use max_workers, default is **100**.
+- *timer:* (for async only), a tuple, for example (120, 10) means run 120 seconds and then pause 10 seconds, because async is truly fast, to reduce sever's load, it is better to pause a while. default is **(60, 10)**.
+- *limits:* parameter pass to [httpx](https://www.python-httpx.org/api/#client), means max connections in a connection pool, default is **100**.
+- *timeout:* parameter pass to [httpx](https://www.python-httpx.org/api/#client), default is **5** seconds.
+- **kwargs:* other parameters pass to [httpx](https://www.python-httpx.org/api/#client).
 
 ## How to use
 
@@ -69,11 +68,11 @@ from crawler import ImageCrawlerAsync
 
 if __name__ == '__main__':
   ROOT = Path(r'E:/test')
-  MAX_COCO = 50
+  MAX_WORKERS = 50
   url = 'https://www.example.com'
   containers = [('div', {'class': 'content'}), ('img', {'src': True})]
   main(ImageCrawlerAsync, url, ROOT, containers,
-       max_coco=MAX_COCO,
+       max_workers=MAX_WORKERS,
        timer=(120, 5),
        timeout=10,
        follow_redirects=True)
@@ -95,3 +94,26 @@ if __name__ == '__main__':
        follow_redirects=True)
 
 ```
+
+or you can instance relevant class by your own:
+
+```python
+  from pathlib import Path
+  import asyncio
+
+  from clawler import ImageClawlerasync
+
+  root = Path(r'E:/test')
+  max_workers = 5
+  url = 'https://www.sample.com'
+  containers = [('div', {'class': 'post-content'}), ('p', {})]
+  clawler = ImageClawlerAsync(url, root)
+  try:
+    asyncio.run(clawler.clawl(containers))
+  finally:
+    clawler.store()
+```
+
+if you instance by your own, don't forget invoke *store* method to save crawled dat to disk, otherwise it will start from beginning.
+
+## Extend

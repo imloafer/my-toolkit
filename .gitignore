@@ -18,4 +18,6 @@ exercise/
 crawler_text.py
 app.py
 *.dat
+test.py
+
 
