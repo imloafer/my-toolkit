@@ -19,5 +19,6 @@ crawler_text.py
 app.py
 *.dat
 test.py
-
+*.json
+crawler_s.py
 
