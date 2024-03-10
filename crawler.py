@@ -66,7 +66,7 @@ class Crawler:
 
     def _preprocess(self, url, page, containers, redundant):
 
-        self._update_links(page)  # update links in current page
+        self._update_links(url, page)  # update links in current page
         title = self._get_title(page, redundant)  # get title
         targets, child_attr = self._get_target(page, containers)  # get targets
         cat = self.catalog(page)  # get catalog
@@ -91,12 +91,17 @@ class Crawler:
             r.encoding = 'utf-8'
             return f(r, *args)
 
-    def _update_links(self, page):
+    def _update_links(self, url, page):
 
         links = page.find_all('a', href=True)
+        up = urlparse(url)
+        idx = up.path.rfind('/')
+        up = up._replace(path=up.path[:idx+1])
         for link in links:
             href = link['href']
             u = urlparse(href)
+            if u.netloc == '' and not u.path.startswith('/'):
+                u = u._replace(netloc=up.netloc, path=up.path + u.path)
             if (u.netloc != '' and u.netloc != self.domain) or u.scheme == 'javascript':
                 continue
             href = self._parse_url(u)
@@ -235,7 +240,7 @@ class CrawlerMultiThread(Crawler):
 
     def _preprocess(self, url, page, containers, redundant):
         with ThreadPoolExecutor(max_workers=3) as executor:
-            fs = [executor.submit(self._update_links, page),
+            fs = [executor.submit(self._update_links, url, page),
                   executor.submit(self._get_title, page, redundant),
                   executor.submit(self._get_target, page, containers),
                   executor.submit(self.catalog, page)]
@@ -308,7 +313,7 @@ class CrawlerAsync(Crawler):
         self.explored.add(url)
         page = await self._get(url, url, self._parse_html)
         if page:
-            results = await asyncio.gather(asyncio.to_thread(self._update_links, page),
+            results = await asyncio.gather(asyncio.to_thread(self._update_links, url, page),
                                            asyncio.to_thread(self._get_title, page, redundant),
                                            asyncio.to_thread(self._get_target, page, containers),
                                            asyncio.to_thread(self.catalog, page))
