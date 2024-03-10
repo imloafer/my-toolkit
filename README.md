@@ -113,7 +113,7 @@ or you can instance relevant class by your own:
     clawler.store()
 ```
 
-if you instance by your own, don't forget invoke *store* method to save crawled dat to disk, otherwise it will start from beginning.
+if you instance by your own, don't forget invoke *store* method to save crawled data to disk, otherwise it will start from beginning.
 
 ## Customization
 
