@@ -134,12 +134,13 @@ class Crawler:
 
     def _get_title(self, html, redundant):
         title = html.find('title')
+        extras = ' -_.'
         if not title:
             return ['no title']
         title = title.text
         for ic in ILLEGAL_CHARACTERS:
             title = title.replace(ic, '')
-        extras = ' -_.'
+        title = title.strip(extras)
         if redundant:
             title = title.replace(redundant, '').strip(extras)
         return self.custom_title(title)
