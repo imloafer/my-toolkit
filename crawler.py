@@ -83,6 +83,13 @@ class Crawler:
         try:
             r = self.session.get(url)
             r.raise_for_status()
+        except httpx.RequestError as e:
+            logger.error("An error occurred while requesting %s. %s will be restored.",
+                         e.request.url, ori_url)
+            self._restore_url(ori_url)
+        except httpx.HTTPStatusError as e:
+            logger.error("Error response %s while requesting %s. %s will be discarded",
+                         e.response.status_code, e.request.url, ori_url)
         except Exception as e:
             logger.exception('%s happens %s', url, e)
             # if error, restore unfinished url
@@ -331,6 +338,13 @@ class CrawlerAsync(Crawler):
         try:
             r = await self.session.get(url)
             r.raise_for_status()
+        except httpx.RequestError as e:
+            logger.error("An error occurred while requesting %s. %s will be restored.",
+                         e.request.url, ori_url)
+            self._restore_url(ori_url)
+        except httpx.HTTPStatusError as e:
+            logger.error("Error response %s while requesting %s.",
+                         e.response.status_code, e.request.url)
         except Exception as e:
             logger.error('%s happens %s', url, e)
             # if error, restore unfinished url
