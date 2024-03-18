@@ -140,9 +140,9 @@ class Crawler:
         title = title.text
         for ic in ILLEGAL_CHARACTERS:
             title = title.replace(ic, '')
-        title = title.strip(extras)
         if redundant:
-            title = title.replace(redundant, '').strip(extras)
+            title = title.replace(redundant, '')
+        title = title.strip(extras)
         return self.custom_title(title)
 
     def custom_title(self, title):
